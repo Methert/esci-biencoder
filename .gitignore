@@ -1,0 +1,34 @@
+# Data (Amazon ESCI — large, not versioned)
+data/
+*.parquet
+*.csv
+
+# Models / checkpoints / indexes
+checkpoints/
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.faiss
+*.index
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Logs / experiment tracking
+runs/
+wandb/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
