@@ -16,4 +16,7 @@ class BiEncoder(nn.Module):
 
     def forward(self, input_ids, attention_mask):
         # ← senin yazacağın 3 satır
-        ...
+        out = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
+        pooled = mean_pooling(out.last_hidden_state, attention_mask)
+        return F.normalize(pooled, p = 2, dim = 1)
+    
