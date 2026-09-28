@@ -46,9 +46,10 @@ için eğitilmiş. Bu modelde kontrol edilecekler:
 - Train/val query kesişimi boş olmalı (sızıntı kontrolü)
 - In-batch acc@1 B=16'da tavana yakın (0.957) → asıl ölçüt G7'deki tam korpus Recall/nDCG
 
-# Baseline (B=16, in-batch, val=2.5k)
-- Zero-shot: val_loss 0.258, acc@1 0.957
-- 20 adım smoke run sonrası: val_loss 0.206, acc@1 0.959
+# Baseline (val=2.5k, in-batch, eval_batch_size=128 — train batch'ten bağımsız, koşular arası kıyaslanabilir)
+- Zero-shot: val_loss 0.882, acc@1 0.898
+- 20 adım smoke run (B=16) sonrası: val_loss 0.691, acc@1 0.894
+- Her koşu: checkpoints/<run_name>/{best.pt, metrics.json}
 
 # Takvim
 G4: model.py, losses.py, data_prep.py ✓
