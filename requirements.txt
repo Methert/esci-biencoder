@@ -1,0 +1,14 @@
+# CUDA 12.1 build: pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.5.1
+transformers==5.17.0
+datasets==5.0.1
+pandas==3.0.5
+pyarrow==25.0.1
+numpy==2.4.6
+tqdm==4.70.0
+
+# G8-9
+# faiss-cpu
+# G12-13
+# fastapi
+# uvicorn
