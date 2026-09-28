@@ -1,4 +1,5 @@
 import argparse
+import json
 import math
 import time
 from pathlib import Path
@@ -19,12 +20,15 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--epochs", type=int, default=1)
     p.add_argument("--batch_size", type=int, default=16)
+    p.add_argument("--eval_batch_size", type=int, default=128,
+                   help="fixed across runs so val metrics stay comparable")
     p.add_argument("--lr", type=float, default=2e-5)
     p.add_argument("--max_len", type=int, default=128)
     p.add_argument("--warmup_ratio", type=float, default=0.1)
     p.add_argument("--max_steps", type=int, default=None, help="stop early (smoke run)")
     p.add_argument("--log_every", type=int, default=50)
-    p.add_argument("--out_dir", default=str(ROOT / "checkpoints"))
+    p.add_argument("--eval_every", type=int, default=500)
+    p.add_argument("--run_name", default=None, help="default: b{batch}_lr{lr}")
     p.add_argument("--seed", type=int, default=42)
     return p.parse_args()
 
@@ -55,12 +59,15 @@ def main():
     args = parse_args()
     torch.manual_seed(args.seed)
     device = "cuda"
+    run_name = args.run_name or f"b{args.batch_size}_lr{args.lr:g}"
+    out_dir = ROOT / "checkpoints" / run_name
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     train_loader = make_loader(ROOT / "data" / "train.parquet", tokenizer,
                                args.batch_size, args.max_len, shuffle=True)
     val_loader = make_loader(ROOT / "data" / "val.parquet", tokenizer,
-                             args.batch_size, args.max_len, shuffle=False)
+                             args.eval_batch_size, args.max_len, shuffle=False)
 
     model = BiEncoder(MODEL_NAME).to(device)
     optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
@@ -70,12 +77,17 @@ def main():
     )
     scaler = torch.amp.GradScaler("cuda")
 
-    out_dir = Path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    history = []
 
-    val_loss, val_acc = evaluate(model, val_loader, device)
-    print(f"[zero-shot] val_loss={val_loss:.4f}  val_acc@1={val_acc:.3f}")
-    best_val = val_loss
+    def run_eval(step):
+        val_loss, val_acc = evaluate(model, val_loader, device)
+        history.append({"step": step, "val_loss": val_loss, "val_acc": val_acc})
+        print(f"[eval step {step}] val_loss={val_loss:.4f}  val_acc@1={val_acc:.3f}")
+        if step > 0 and val_loss < min(h["val_loss"] for h in history[:-1]):
+            torch.save(model.state_dict(), out_dir / "best.pt")
+            print(f"  saved {out_dir / 'best.pt'}")
+
+    run_eval(0)  # zero-shot baseline
 
     model.train()
     step, t0 = 0, time.time()
@@ -100,20 +112,25 @@ def main():
             if step % args.log_every == 0:
                 print(f"epoch {epoch} step {step}/{total_steps}  loss={loss.item():.4f}  "
                       f"lr={scheduler.get_last_lr()[0]:.2e}  {step / (time.time() - t0):.1f} it/s")
+            if step % args.eval_every == 0 and step < total_steps:
+                run_eval(step)
             if step >= total_steps:
                 break
-
-        val_loss, val_acc = evaluate(model, val_loader, device)
-        print(f"[epoch {epoch}] val_loss={val_loss:.4f}  val_acc@1={val_acc:.3f}")
-        if val_loss < best_val:
-            best_val = val_loss
-            torch.save(model.state_dict(), out_dir / "best.pt")
-            print(f"  saved {out_dir / 'best.pt'}")
         if step >= total_steps:
             break
 
-    print(f"done in {(time.time() - t0) / 60:.1f} min, peak VRAM "
-          f"{torch.cuda.max_memory_allocated() / 1e9:.2f} GB")
+    run_eval(step)
+    minutes = (time.time() - t0) / 60
+    peak_gb = torch.cuda.max_memory_allocated() / 1e9
+    print(f"done in {minutes:.1f} min, peak VRAM {peak_gb:.2f} GB")
+
+    best = min(history[1:], key=lambda h: h["val_loss"])
+    with open(out_dir / "metrics.json", "w") as f:
+        json.dump({"args": vars(args), "steps": step, "minutes": round(minutes, 2),
+                   "peak_vram_gb": round(peak_gb, 2), "zero_shot": history[0],
+                   "best": best, "history": history}, f, indent=2)
+    print(f"zero-shot val_loss={history[0]['val_loss']:.4f} -> best {best['val_loss']:.4f} "
+          f"(step {best['step']})  metrics: {out_dir / 'metrics.json'}")
 
 
 if __name__ == "__main__":
